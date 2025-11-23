@@ -5,16 +5,18 @@ use std::thread;
 #[macro_export]
 macro_rules! branch {
     ( $( { $($body:tt)* } ),+ $(,)? ) => {{
-        $crate::branch(vec![
+        $crate::branch([
             $(
-                Box::new(|| { $($body)* })
+                Box::new(|| { $($body)* }) as $crate::Job<_>
             ),+
         ])
     }};
 }
 
-pub fn branch<T: Send + 'static>(jobs: Vec<Job<T>>) -> Vec<thread::JoinHandle<T>> {
-    jobs.into_iter()
-        .map(|job| thread::spawn(|| job()))
-        .collect()
+pub fn branch<I, T>(jobs: I) -> Vec<thread::JoinHandle<T>>
+where
+    I: IntoIterator<Item = Job<T>>,
+    T: Send + 'static,
+{
+    jobs.into_iter().map(|job| thread::spawn(job)).collect()
 }

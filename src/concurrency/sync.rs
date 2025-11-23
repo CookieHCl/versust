@@ -5,19 +5,20 @@ use std::thread;
 #[macro_export]
 macro_rules! sync {
     ( $( { $($body:tt)* } ),+ $(,)? ) => {{
-        $crate::sync(vec![
+        $crate::sync([
             $(
-                Box::new(|| { $($body)* })
+                Box::new(|| { $($body)* }) as $crate::Job<_>
             ),+
         ])
     }};
 }
 
-pub fn sync<T: Send + 'static>(jobs: Vec<Job<T>>) -> Vec<JobResult<T>> {
-    let handles: Vec<_> = jobs
-        .into_iter()
-        .map(|job| thread::spawn(|| job()))
-        .collect();
+pub fn sync<I, T>(jobs: I) -> Vec<JobResult<T>>
+where
+    I: IntoIterator<Item = Job<T>>,
+    T: Send + 'static,
+{
+    let handles: Vec<_> = jobs.into_iter().map(|job| thread::spawn(job)).collect();
 
     handles
         .into_iter()

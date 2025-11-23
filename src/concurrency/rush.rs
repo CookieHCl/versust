@@ -6,17 +6,19 @@ use std::thread;
 #[macro_export]
 macro_rules! rush {
     ( $( { $($body:tt)* } ),+ $(,)? ) => {{
-        $crate::rush(vec![
+        $crate::rush([
             $(
-                Box::new(|| { $($body)* })
+                Box::new(|| { $($body)* }) as $crate::Job<_>
             ),+
         ])
     }};
 }
 
-pub fn rush<T: Send + 'static>(jobs: Vec<Job<T>>) -> (usize, T) {
-    assert!(!jobs.is_empty(), "rush() needs at least one job");
-
+pub fn rush<I, T: Send + 'static>(jobs: I) -> (usize, T)
+where
+    I: IntoIterator<Item = Job<T>>,
+    T: Send + 'static,
+{
     let (tx, rx) = mpsc::channel::<(usize, T)>();
 
     for (i, job) in jobs.into_iter().enumerate() {

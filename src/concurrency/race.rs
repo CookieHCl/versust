@@ -7,7 +7,7 @@ use std::thread;
 #[macro_export]
 macro_rules! race {
     ( $( { $($body:tt)* } ),+ $(,)? ) => {{
-        $crate::race(vec![
+        $crate::race([
             $(
                 Box::new({
                     use std::sync::atomic::{ AtomicBool, Ordering };
@@ -15,7 +15,7 @@ macro_rules! race {
                     move |__is_finished: &AtomicBool| {
                         $crate::__race_job![ __is_finished; $($body)* ]
                     }
-                })
+                }) as $crate::RaceJob<_>
             ),+
         ])
     }};
@@ -71,9 +71,11 @@ macro_rules! __race_job {
     }};
 }
 
-pub fn race<T: Send + 'static>(jobs: Vec<RaceJob<T>>) -> (usize, T) {
-    assert!(!jobs.is_empty(), "race() needs at least one job");
-
+pub fn race<I, T>(jobs: I) -> (usize, T)
+where
+    I: IntoIterator<Item = RaceJob<T>>,
+    T: Send + 'static,
+{
     let is_finished = Arc::new(AtomicBool::new(false));
     let (tx, rx) = mpsc::channel::<(usize, T)>();
 
