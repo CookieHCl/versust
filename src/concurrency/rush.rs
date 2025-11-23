@@ -2,6 +2,18 @@ use crate::Job;
 use std::sync::mpsc;
 use std::thread;
 
+// rush![ { ... }, { ... }, { ... }, ]
+#[macro_export]
+macro_rules! rush {
+    ( $( { $($body:tt)* } ),+ $(,)? ) => {{
+        $crate::rush(vec![
+            $(
+                Box::new(|| { $($body)* })
+            ),+
+        ])
+    }};
+}
+
 pub fn rush<T: Send + 'static>(jobs: Vec<Job<T>>) -> (usize, T) {
     assert!(!jobs.is_empty(), "rush() needs at least one job");
 
