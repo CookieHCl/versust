@@ -202,7 +202,69 @@ mod tests {
     }
 
     #[test]
-    fn race_is_atomic() {
-        // TODO: 매크로 move 받을 수 있도록 수정 후 테스트 작성
+    fn race_run_jobs_atomically() {
+        let finished_count = Arc::new(AtomicU8::new(0));
+        let finished_thread = Arc::new(AtomicU8::new(0));
+
+        let result = race![
+            [
+                let finished_count = finished_count.clone();
+                let finished_thread = finished_thread.clone();
+            ]
+            {
+                thread::sleep(Duration::from_millis(100));
+                finished_count.fetch_add(1, Ordering::AcqRel);
+                finished_thread.store(1, Ordering::Release);
+            },
+            [
+                let finished_count = finished_count.clone();
+                let finished_thread = finished_thread.clone();
+            ]
+            {
+                // two statements should run atomically
+                {
+                    thread::sleep(Duration::from_millis(150));
+                    finished_count.fetch_add(1, Ordering::AcqRel);
+                };
+                finished_thread.store(2, Ordering::Release);
+            },
+            [
+                let finished_count = finished_count.clone();
+                let finished_thread = finished_thread.clone();
+            ]
+            {
+                thread::sleep(Duration::from_millis(50));
+                finished_count.fetch_add(1, Ordering::AcqRel);
+                finished_thread.store(3, Ordering::Release);
+            },
+        ];
+
+        assert_eq!(
+            finished_count.load(Ordering::Acquire),
+            1,
+            "race didn't exit after the fastest job"
+        );
+        assert_eq!(
+            finished_thread.load(Ordering::Acquire),
+            3,
+            "race did not execute jobs correctly"
+        );
+        assert_eq!(result, (2, ()), "race did not execute jobs correctly");
+
+        // wait for other jobs to finish
+        thread::sleep(Duration::from_millis(200));
+
+        // since sleep and fetch_add are in one statement, fetch_add should be run
+        assert_eq!(
+            finished_count.load(Ordering::Acquire),
+            2,
+            "race didn't run jobs atomically"
+        );
+        // however, thread is terminated before storing to finished_thread
+        assert_eq!(
+            finished_thread.load(Ordering::Acquire),
+            3,
+            "race didn't run jobs atomically"
+        )
     }
 }
