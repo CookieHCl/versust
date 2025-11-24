@@ -12,7 +12,7 @@ macro_rules! race {
                 $($($preprocessing)+)?
 
                 use std::sync::atomic::{ AtomicBool, Ordering };
-                $crate::make_race_job(
+                $crate::into_race_job(
                     move |__is_finished: &AtomicBool| {
                         $crate::__race_job![ __is_finished; $($body)* ]
                     }
@@ -97,7 +97,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::make_race_job;
+    use crate::into_race_job;
 
     use super::*;
     use std::sync::Arc;
@@ -121,7 +121,7 @@ mod tests {
                     None
                 }
             }) as RaceJob<&str>,
-            make_race_job(|is_finished| {
+            into_race_job(|is_finished| {
                 thread::sleep(Duration::from_millis(10));
 
                 if is_finished

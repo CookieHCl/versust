@@ -9,7 +9,7 @@ macro_rules! rush {
         $crate::rush([
             $({
                 $($($preprocessing)+)?
-                $crate::make_job(move || { $($body)* })
+                $crate::into_job(move || { $($body)* })
             }),+
         ])
     }};
@@ -36,7 +36,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::make_job;
+    use crate::into_job;
 
     use super::*;
     use std::sync::Arc;
@@ -52,7 +52,7 @@ mod tests {
                 thread::sleep(Duration::from_millis(30));
                 "1st job"
             }) as Job<&str>,
-            make_job(|| {
+            into_job(|| {
                 thread::sleep(Duration::from_millis(10));
                 "2nd job"
             }),
