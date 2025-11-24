@@ -2,14 +2,15 @@ use crate::Job;
 use std::sync::mpsc;
 use std::thread;
 
-// rush![ { ... }, { ... }, { ... }, ]
+// rush![ { ... }, { ... }, [ ... ]{ ... }, ]
 #[macro_export]
 macro_rules! rush {
-    ( $( { $($body:tt)* } ),+ $(,)? ) => {{
+    ( $( $( [ $($preprocessing:tt)+ ] )? { $($body:tt)* } ),+ $(,)? ) => {{
         $crate::rush([
-            $(
-                $crate::make_job(|| { $($body)* })
-            ),+
+            $({
+                $($($preprocessing)+)?
+                $crate::make_job(move || { $($body)* })
+            }),+
         ])
     }};
 }
@@ -88,29 +89,23 @@ mod tests {
     fn rush_runs_remaining_jobs() {
         let finished_count = Arc::new(AtomicU8::new(0));
 
-        let result = rush([
-            make_job({
-                let finished_count = finished_count.clone();
-                move || {
-                    thread::sleep(Duration::from_millis(100));
-                    finished_count.fetch_add(1, Ordering::AcqRel);
-                }
-            }),
-            make_job({
-                let finished_count = finished_count.clone();
-                move || {
-                    thread::sleep(Duration::from_millis(150));
-                    finished_count.fetch_add(1, Ordering::AcqRel);
-                }
-            }),
-            make_job({
-                let finished_count = finished_count.clone();
-                move || {
-                    thread::sleep(Duration::from_millis(50));
-                    finished_count.fetch_add(1, Ordering::AcqRel);
-                }
-            }),
-        ]);
+        let result = rush![
+            [let finished_count = finished_count.clone();]
+            {
+                thread::sleep(Duration::from_millis(100));
+                finished_count.fetch_add(1, Ordering::AcqRel);
+            },
+            [let finished_count = finished_count.clone();]
+            {
+                thread::sleep(Duration::from_millis(150));
+                finished_count.fetch_add(1, Ordering::AcqRel);
+            },
+            [let finished_count = finished_count.clone();]
+            {
+                thread::sleep(Duration::from_millis(50));
+                finished_count.fetch_add(1, Ordering::AcqRel);
+            },
+        ];
 
         assert_eq!(
             finished_count.load(Ordering::Acquire),

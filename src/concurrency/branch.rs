@@ -1,14 +1,15 @@
 use crate::Job;
 use std::thread;
 
-// branch![ { ... }, { ... }, { ... }, ]
+// branch![ { ... }, { ... }, [ ... ]{ ... }, ]
 #[macro_export]
 macro_rules! branch {
-    ( $( { $($body:tt)* } ),+ $(,)? ) => {{
+    ( $( $( [ $($preprocessing:tt)+ ] )? { $($body:tt)* } ),+ $(,)? ) => {{
         $crate::branch([
-            $(
-                $crate::make_job(|| { $($body)* })
-            ),+
+            $({
+                $($($preprocessing)+)?
+                $crate::make_job(move || { $($body)* })
+            }),+
         ])
     }};
 }
@@ -99,22 +100,18 @@ mod tests {
     fn branch_returns_immediately() {
         let (tx, rx) = mpsc::channel();
 
-        let handles = branch([
-            make_job({
-                let tx = tx.clone();
-                move || {
-                    thread::sleep(Duration::from_millis(200));
-                    tx.send(()).unwrap();
-                }
-            }),
-            make_job({
-                let tx = tx.clone();
-                move || {
-                    thread::sleep(Duration::from_millis(300));
-                    tx.send(()).unwrap();
-                }
-            }),
-        ]);
+        let handles = branch![
+            [let tx = tx.clone();]
+            {
+                thread::sleep(Duration::from_millis(200));
+                tx.send(()).unwrap();
+            },
+            [let tx = tx.clone();]
+            {
+                thread::sleep(Duration::from_millis(300));
+                tx.send(()).unwrap();
+            },
+        ];
 
         // branch should return almost immediately
         assert_eq!(

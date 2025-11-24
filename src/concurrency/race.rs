@@ -3,20 +3,21 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, mpsc};
 use std::thread;
 
-// race![ { ... }, { ... }, { ... }, ]
+// race![ { ... }, { ... }, [ ... ]{ ... }, ]
 #[macro_export]
 macro_rules! race {
-    ( $( { $($body:tt)* } ),+ $(,)? ) => {{
+    ( $( $( [ $($preprocessing:tt)+ ] )? { $($body:tt)* } ),+ $(,)? ) => {{
         $crate::race([
-            $(
-                $crate::make_race_job({
-                    use std::sync::atomic::{ AtomicBool, Ordering };
+            $({
+                $($($preprocessing)+)?
 
+                use std::sync::atomic::{ AtomicBool, Ordering };
+                $crate::make_race_job(
                     move |__is_finished: &AtomicBool| {
                         $crate::__race_job![ __is_finished; $($body)* ]
                     }
-                })
-            ),+
+                )
+            }),+
         ])
     }};
 }
@@ -165,62 +166,23 @@ mod tests {
     fn race_terminates_other_jobs() {
         let finished_count = Arc::new(AtomicU8::new(0));
 
-        let result = race([
-            make_race_job({
-                let finished_count = finished_count.clone();
-                move |is_finished| {
-                    thread::sleep(Duration::from_millis(100));
-                    if is_finished.load(Ordering::Acquire) {
-                        return None;
-                    }
-                    finished_count.fetch_add(1, Ordering::AcqRel);
-                    if is_finished
-                        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-                        .is_ok()
-                    {
-                        Some(())
-                    } else {
-                        None
-                    }
-                }
-            }),
-            make_race_job({
-                let finished_count = finished_count.clone();
-                move |is_finished| {
-                    thread::sleep(Duration::from_millis(150));
-                    if is_finished.load(Ordering::Acquire) {
-                        return None;
-                    }
-                    finished_count.fetch_add(1, Ordering::AcqRel);
-                    if is_finished
-                        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-                        .is_ok()
-                    {
-                        Some(())
-                    } else {
-                        None
-                    }
-                }
-            }),
-            make_race_job({
-                let finished_count = finished_count.clone();
-                move |is_finished| {
-                    thread::sleep(Duration::from_millis(50));
-                    if is_finished.load(Ordering::Acquire) {
-                        return None;
-                    }
-                    finished_count.fetch_add(1, Ordering::AcqRel);
-                    if is_finished
-                        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-                        .is_ok()
-                    {
-                        Some(())
-                    } else {
-                        None
-                    }
-                }
-            }),
-        ]);
+        let result = race![
+            [let finished_count = finished_count.clone();]
+            {
+                thread::sleep(Duration::from_millis(100));
+                finished_count.fetch_add(1, Ordering::AcqRel);
+            },
+            [let finished_count = finished_count.clone();]
+            {
+                thread::sleep(Duration::from_millis(150));
+                finished_count.fetch_add(1, Ordering::AcqRel);
+            },
+            [let finished_count = finished_count.clone();]
+            {
+                thread::sleep(Duration::from_millis(50));
+                finished_count.fetch_add(1, Ordering::AcqRel);
+            },
+        ];
 
         assert_eq!(
             finished_count.load(Ordering::Acquire),

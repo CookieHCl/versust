@@ -1,14 +1,15 @@
 use crate::{Job, JobResult};
 use std::thread;
 
-// sync![ { ... }, { ... }, { ... }, ]
+// sync![ { ... }, { ... }, [ ... ]{ ... }, ]
 #[macro_export]
 macro_rules! sync {
-    ( $( { $($body:tt)* } ),+ $(,)? ) => {{
+    ( $( $( [ $($preprocessing:tt)+ ] )? { $($body:tt)* } ),+ $(,)? ) => {{
         $crate::sync([
-            $(
-                $crate::make_job(|| { $($body)* })
-            ),+
+            $({
+                $($($preprocessing)+)?
+                $crate::make_job(move || { $($body)* })
+            }),+
         ])
     }};
 }
