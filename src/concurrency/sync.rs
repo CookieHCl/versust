@@ -7,7 +7,7 @@ macro_rules! sync {
     ( $( { $($body:tt)* } ),+ $(,)? ) => {{
         $crate::sync([
             $(
-                Box::new(|| { $($body)* }) as $crate::Job<_>
+                $crate::make_job(|| { $($body)* })
             ),+
         ])
     }};

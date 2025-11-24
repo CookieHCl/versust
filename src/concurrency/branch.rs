@@ -7,7 +7,7 @@ macro_rules! branch {
     ( $( { $($body:tt)* } ),+ $(,)? ) => {{
         $crate::branch([
             $(
-                Box::new(|| { $($body)* }) as $crate::Job<_>
+                $crate::make_job(|| { $($body)* })
             ),+
         ])
     }};

@@ -9,13 +9,13 @@ macro_rules! race {
     ( $( { $($body:tt)* } ),+ $(,)? ) => {{
         $crate::race([
             $(
-                Box::new({
+                $crate::make_race_job({
                     use std::sync::atomic::{ AtomicBool, Ordering };
 
                     move |__is_finished: &AtomicBool| {
                         $crate::__race_job![ __is_finished; $($body)* ]
                     }
-                }) as $crate::RaceJob<_>
+                })
             ),+
         ])
     }};

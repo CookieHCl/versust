@@ -8,7 +8,7 @@ macro_rules! rush {
     ( $( { $($body:tt)* } ),+ $(,)? ) => {{
         $crate::rush([
             $(
-                Box::new(|| { $($body)* }) as $crate::Job<_>
+                $crate::make_job(|| { $($body)* })
             ),+
         ])
     }};
