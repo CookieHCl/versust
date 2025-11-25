@@ -1,7 +1,63 @@
 use crate::{Job, JobResult};
 use std::thread;
 
-// sync![ { ... }, { ... }, [ ... ]{ ... }, ]
+/// Waits for all jobs to complete and returns their [`thread::Result`](std::thread::Result)s.
+///
+/// This is a helper macro for [`sync`](sync()) function.
+///
+/// The macro accepts closure's body, with an optional preprocessing section.  
+/// Preprocessing sections can be used to set up variables that will be moved into the closure.
+///
+/// # Examples
+///
+/// Using macro without preprocessing section:
+///
+/// ```
+/// use versust::sync;
+/// use std::thread;
+/// use std::time::Duration;
+///
+/// let results = sync![
+///     {
+///         thread::sleep(Duration::from_millis(100));
+///         1
+///     },
+///     {
+///         thread::sleep(Duration::from_millis(50));
+///         2
+///     }
+/// ];
+///
+/// let results: Vec<_> = results.into_iter().map(|r| r.unwrap()).collect();
+/// assert_eq!(results, vec![1, 2]);
+/// ```
+///
+/// Using macro with preprocessing section:
+///
+/// ```
+/// use versust::sync;
+/// use std::sync::Arc;
+/// use std::sync::atomic::{AtomicU8, Ordering};
+/// use std::thread;
+/// use std::time::Duration;
+///
+/// let finished_count = Arc::new(AtomicU8::new(0));
+///
+/// sync![
+///     [let finished_count = finished_count.clone();]
+///     {
+///         thread::sleep(Duration::from_millis(100));
+///         finished_count.fetch_add(1, Ordering::AcqRel);
+///     },
+///     [let finished_count = finished_count.clone();]
+///     {
+///         thread::sleep(Duration::from_millis(50));
+///         finished_count.fetch_add(1, Ordering::AcqRel);
+///     }
+/// ];
+///
+/// assert_eq!(finished_count.load(Ordering::Acquire), 2);
+/// ```
 #[macro_export]
 macro_rules! sync {
     ( $( $( [ $($preprocessing:tt)+ ] )? { $($body:tt)* } ),+ $(,)? ) => {{
@@ -14,6 +70,34 @@ macro_rules! sync {
     }};
 }
 
+/// Waits for all jobs to complete and returns their [`thread::Result`](std::thread::Result)s.
+///
+/// Normally you would use the [`sync!`](crate::sync!) macro instead of using this function directly.
+///
+/// This function blocks the current thread until all jobs have completed.  
+/// It then collects and returns their results in a vector.
+///
+/// # Examples
+///
+/// ```
+/// use versust::sync;
+/// use std::thread;
+/// use std::time::Duration;
+///
+/// let results = sync([
+///     versust::into_job(|| {
+///         thread::sleep(Duration::from_millis(100));
+///         1
+///     }),
+///     versust::into_job(|| {
+///         thread::sleep(Duration::from_millis(50));
+///         2
+///     })
+/// ]);
+///
+/// let results: Vec<_> = results.into_iter().map(|h| h.unwrap()).collect();
+/// assert_eq!(results, vec![1, 2]);
+/// ```
 pub fn sync<I, T>(jobs: I) -> Vec<JobResult<T>>
 where
     I: IntoIterator<Item = Job<T>>,

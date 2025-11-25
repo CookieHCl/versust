@@ -1,7 +1,63 @@
 use crate::Job;
 use std::thread;
 
-// branch![ { ... }, { ... }, [ ... ]{ ... }, ]
+/// Executes jobs concurrently and immediately returns their [`JoinHandle`](std::thread::JoinHandle)s.
+///
+/// This is a helper macro for [`branch`](branch()) function.
+///
+/// The macro accepts closure's body, with an optional preprocessing section.  
+/// Preprocessing sections can be used to set up variables that will be moved into the closure.
+///
+/// # Examples
+///
+/// Using macro without preprocessing section:
+///
+/// ```
+/// use versust::branch;
+/// use std::thread;
+/// use std::time::Duration;
+///
+/// let handles = branch![
+///     {
+///         thread::sleep(Duration::from_millis(100));
+///         1
+///     },
+///     {
+///         thread::sleep(Duration::from_millis(50));
+///         2
+///     }
+/// ];
+///
+/// let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+/// assert_eq!(results, vec![1, 2]);
+/// ```
+///
+/// Using macro with preprocessing section:
+///
+/// ```
+/// use versust::branch;
+/// use std::sync::mpsc;
+/// use std::thread;
+/// use std::time::Duration;
+///
+/// let (tx, rx) = mpsc::channel();
+///
+/// let handles = branch![
+///     [let tx = tx.clone();]
+///     {
+///         thread::sleep(Duration::from_millis(100));
+///         let _ = tx.send("1st job");
+///     },
+///     [let tx = tx.clone();]
+///     {
+///         thread::sleep(Duration::from_millis(50));
+///         let _ = tx.send("2nd job");
+///     }
+/// ];
+///
+/// assert_eq!(rx.recv().unwrap(), "2nd job");
+/// assert_eq!(rx.recv().unwrap(), "1st job");
+/// ```
 #[macro_export]
 macro_rules! branch {
     ( $( $( [ $($preprocessing:tt)+ ] )? { $($body:tt)* } ),+ $(,)? ) => {{
@@ -14,6 +70,36 @@ macro_rules! branch {
     }};
 }
 
+/// Executes jobs concurrently and immediately returns their [`JoinHandle`](std::thread::JoinHandle)s.
+///
+/// Normally you would use the [`branch!`](crate::branch!) macro instead of using this function directly.
+///
+/// This allows the caller to continue execution while the jobs run in the background.  
+/// The handles can be used to join the threads later.
+///
+/// Note that when the main thread of a Rust program terminates, the entire program shuts down, terminating all running threads.
+///
+/// # Examples
+///
+/// ```
+/// use versust::branch;
+/// use std::thread;
+/// use std::time::Duration;
+///
+/// let handles = branch([
+///     versust::into_job(|| {
+///         thread::sleep(Duration::from_millis(100));
+///         1
+///     }),
+///     versust::into_job(|| {
+///         thread::sleep(Duration::from_millis(50));
+///         2
+///     })
+/// ]);
+///
+/// let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+/// assert_eq!(results, vec![1, 2]);
+/// ```
 pub fn branch<I, T>(jobs: I) -> Vec<thread::JoinHandle<T>>
 where
     I: IntoIterator<Item = Job<T>>,

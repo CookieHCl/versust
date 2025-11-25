@@ -3,7 +3,100 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, mpsc};
 use std::thread;
 
-// race![ { ... }, { ... }, [ ... ]{ ... }, ]
+/// Waits for the fastest job to complete and returns its index and result.  
+/// Remaining jobs are terminated.
+///
+/// This is a helper macro for [`race`](race()) function.
+///
+/// The macro accepts the body of a closure taking no arguments, with an optional preprocessing section.  
+/// Preprocessing sections can be used to set up variables that will be moved into the closure.
+///
+/// For each semicolon-separated statement in the body, the macro injects a code that checks [`AtomicBool`] flag to see if another job has already finished.
+/// Then, the macro sets the flag when the job finishes and returns its result.  
+/// Due to the parsing limitations of macros, a semicolon should be added after every statement, even after statements such as function declarations.
+///
+/// Since a job may terminate after any semicolon, it must guarantee that it does proper cleanup at any point of termination.
+///
+/// See [`RaceJob<T>`] for more details.
+///
+/// If you need more fine-grained control, (e.g. checking inside for loop) you should use the [`race`](race()) function.
+///
+/// # Examples
+///
+/// Using macro without preprocessing section:
+///
+/// ```
+/// use versust::race;
+/// use std::thread;
+/// use std::time::Duration;
+///
+/// let result = race![
+///     {
+///         thread::sleep(Duration::from_millis(100));
+///         "Finished"
+///     }
+/// ];
+///
+/// // the closure inside the macro will be expanded into
+/// /*
+/// |__is_finished: &AtomicBool| {
+///     if __is_finished.load(Ordering::Acquire) {
+///         return None;
+///     }
+///     thread::sleep(Duration::from_millis(100));
+///
+///     if __is_finished.load(Ordering::Acquire) {
+///         return None;
+///     }
+///     let __check_result = "Finished";
+///
+///     if __is_finished
+///         .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+///         .is_ok()
+///     {
+///         Some(__check_result)
+///     } else {
+///         None
+///     }
+/// }
+/// */
+///
+/// assert_eq!(result, (0, "Finished"));
+/// ```
+///
+/// Using macro with preprocessing section:
+///
+/// ```
+/// use versust::race;
+/// use std::sync::Arc;
+/// use std::sync::atomic::{AtomicU8, Ordering};
+/// use std::thread;
+/// use std::time::Duration;
+///
+/// let finished_count = Arc::new(AtomicU8::new(0));
+///
+/// let result = race![
+///     [let finished_count = finished_count.clone();]
+///     {
+///         thread::sleep(Duration::from_millis(100));
+///         finished_count.fetch_add(1, Ordering::AcqRel);
+///         "1st job"
+///     },
+///     [let finished_count = finished_count.clone();]
+///     {
+///         thread::sleep(Duration::from_millis(50));
+///         finished_count.fetch_add(1, Ordering::AcqRel);
+///         "2nd job"
+///     }
+/// ];
+///
+/// assert_eq!(result, (1, "2nd job"));
+/// assert_eq!(finished_count.load(Ordering::Acquire), 1);
+///
+/// // 1st job is terminated when 2nd job is finished, so finished_count should not increase
+/// thread::sleep(Duration::from_millis(150));
+/// assert_eq!(finished_count.load(Ordering::Acquire), 1);
+/// ```
 #[macro_export]
 macro_rules! race {
     ( $( $( [ $($preprocessing:tt)+ ] )? { $($body:tt)* } ),+ $(,)? ) => {{
@@ -22,8 +115,7 @@ macro_rules! race {
     }};
 }
 
-// __race_job![ ...; ...; ... ]
-// not intended to be used directly;
+#[doc(hidden)]
 #[macro_export]
 macro_rules! __race_job {
     // recursion base case; if ends without expr, return ()
@@ -72,6 +164,77 @@ macro_rules! __race_job {
     }};
 }
 
+/// Waits for the fastest job to complete and returns its index and result.  
+/// Remaining jobs are terminated.
+///
+/// Normally you would use the [`race!`](crate::race!) macro instead of using this function directly.
+///
+/// To ensure that this function operates correctly, [`RaceJob`] must satisfy the following requirements:
+///
+/// - Each job should periodically check the provided [`AtomicBool`] flag to see if another job has already finished.
+/// - If flag is set by another job, the job should return [`None`] immediately.
+/// - If flag remains unset after the job completes, it should set the flag and return [`Some(result)`](Some).
+///   Using [`compare_exchange`](std::sync::atomic::AtomicBool::compare_exchange) is highly recommended.
+/// - Only the fastest job should return [`Some(result)`](Some); all other jobs must return [`None`].
+///
+/// See [`RaceJob<T>`] for more details.
+///
+/// # Examples
+///
+/// ```
+/// use versust::race;
+/// use std::sync::Arc;
+/// use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+/// use std::thread;
+/// use std::time::Duration;
+///
+/// let counter = Arc::new(AtomicU8::new(0));
+///
+/// let result = race([
+///     versust::into_race_job(|is_finished: &AtomicBool| {
+///         thread::sleep(Duration::from_millis(55));
+///
+///         if is_finished
+///             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+///             .is_ok()
+///         {
+///             Some("1st job")
+///         } else {
+///             None
+///         }
+///     }),
+///     versust::into_race_job({
+///         let counter = counter.clone();
+///
+///         move |is_finished: &AtomicBool| {
+///             for _ in 0..100 {
+///                 thread::sleep(Duration::from_millis(10));
+///
+///                 if is_finished.load(Ordering::Acquire) {
+///                     return None;
+///                 }
+///                 counter.fetch_add(1, Ordering::AcqRel);
+///             }
+///
+///             if is_finished
+///                 .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+///                 .is_ok()
+///             {
+///                 Some("2nd job")
+///             } else {
+///                 None
+///             }
+///         }
+///     }),
+/// ]);
+///
+/// assert_eq!(result, (0, "1st job"));
+/// assert_eq!(counter.load(Ordering::Acquire), 5);
+///
+/// // 2nd job is terminated when 1st job is finished, so counter should not increase
+/// thread::sleep(Duration::from_millis(100));
+/// assert_eq!(counter.load(Ordering::Acquire), 5);
+/// ```
 pub fn race<I, T>(jobs: I) -> (usize, T)
 where
     I: IntoIterator<Item = RaceJob<T>>,

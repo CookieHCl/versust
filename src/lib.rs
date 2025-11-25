@@ -1,17 +1,55 @@
 use std::sync::atomic::AtomicBool;
 use std::thread;
 
+/// A closure that can be executed in a separate thread.
+///
+/// Normally you would use the [`into_job`] function to create a [`Job<T>`].
+/// It is used by [`sync`](sync()), [`branch`](branch()), and [`rush`](rush()) functions.
 pub type Job<T> = Box<dyn FnOnce() -> T + Send + 'static>;
+
+/// The result of a job execution.
+///
+/// It is a type alias for [`std::thread::Result<T>`].
 pub type JobResult<T> = thread::Result<T>;
 
+/// A closure that can be executed in a [`race`](race()) function.
+///
+/// Normally you would use the [`into_race_job`] function to create a [`RaceJob<T>`].
+///
+/// To ensure that [`race`](race()) function operates correctly, [`RaceJob`] must satisfy the following requirements:
+///
+/// - Each job should periodically check the provided [`AtomicBool`] flag to see if another job has already finished.
+/// - If flag is set by another job, the job should return [`None`] immediately.
+/// - If flag remains unset after the job completes, it should set the flag and return [`Some(result)`](Some).
+///   Using [`AtomicBool::compare_exchange`] is highly recommended.
+/// - Only the fastest job should return [`Some(result)`](Some); all other jobs must return [`None`].
 pub type RaceJob<T> = Box<dyn FnOnce(&AtomicBool) -> Option<T> + Send + 'static>;
 
+/// Creates a [`Job<T>`] from a closure.
+///
+/// Helper function for [`sync`](sync()), [`branch`](branch()), and [`rush`](rush()) functions.  
+/// This function performs coercion to assist with type inference.
+///
+/// If you really want to use [`Box`] directly, you can either:
+///
+/// - Cast the Box to [`Job<T>`] explicitly, e.g. `Box::new(|| 1) as Job<i32>`
+/// - Declare variable to trigger coercion, e.g. `let job: Job<i32> = Box::new(|| 1);`
 pub fn into_job<T, F>(f: F) -> Job<T>
 where
     F: FnOnce() -> T + Send + 'static,
 {
     Box::new(f)
 }
+
+/// Creates a [`RaceJob<T>`] from a closure.
+///
+/// Helper function for [`race`](race()) function.  
+/// This function performs coercion to assist with type inference.
+///
+/// If you really want to use [`Box`] directly, you can either:
+///
+/// - Cast the Box to [`RaceJob<T>`] explicitly, e.g. `Box::new(|_: &AtomicBool| Some(1)) as RaceJob<i32>`
+/// - Declare variable to trigger coercion, e.g. `let job: RaceJob<i32> = Box::new(|_: &AtomicBool| Some(1));`
 pub fn into_race_job<T, F>(f: F) -> RaceJob<T>
 where
     F: FnOnce(&AtomicBool) -> Option<T> + Send + 'static,
