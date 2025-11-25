@@ -1,4 +1,4 @@
-use crate::RaceJob;
+use crate::{NoSuccessfulJobError, RaceJob};
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, mpsc};
 use std::thread;
@@ -61,7 +61,7 @@ use std::thread;
 /// }
 /// */
 ///
-/// assert_eq!(result, (0, "Finished"));
+/// assert_eq!(result.unwrap(), (0, "Finished"));
 /// ```
 ///
 /// Using macro with preprocessing section:
@@ -90,7 +90,7 @@ use std::thread;
 ///     }
 /// ];
 ///
-/// assert_eq!(result, (1, "2nd job"));
+/// assert_eq!(result.unwrap(), (1, "2nd job"));
 /// assert_eq!(finished_count.load(Ordering::Acquire), 1);
 ///
 /// // 1st job is terminated when 2nd job is finished, so finished_count should not increase
@@ -179,6 +179,19 @@ macro_rules! __race_job {
 ///
 /// See [`RaceJob<T>`] for more details.
 ///
+/// # Errors
+///
+/// Returns [`NoSuccessfulJobError`] if:
+///
+/// - No jobs are provided.
+/// - All jobs panicked.
+/// - All jobs failed to return a result (i.e. All jobs returned [`None`]).
+///
+/// # Panics
+///
+/// This function does not panic.  
+/// However, spawned threads may panic if more than one thread returns [`Some(result)`](Some).
+///
 /// # Examples
 ///
 /// ```
@@ -228,14 +241,14 @@ macro_rules! __race_job {
 ///     }),
 /// ]);
 ///
-/// assert_eq!(result, (0, "1st job"));
+/// assert_eq!(result.unwrap(), (0, "1st job"));
 /// assert_eq!(counter.load(Ordering::Acquire), 5);
 ///
 /// // 2nd job is terminated when 1st job is finished, so counter should not increase
 /// thread::sleep(Duration::from_millis(100));
 /// assert_eq!(counter.load(Ordering::Acquire), 5);
 /// ```
-pub fn race<I, T>(jobs: I) -> (usize, T)
+pub fn race<I, T>(jobs: I) -> Result<(usize, T), NoSuccessfulJobError>
 where
     I: IntoIterator<Item = RaceJob<T>>,
     T: Send + 'static,
@@ -249,13 +262,18 @@ where
 
         thread::spawn(move || {
             if let Some(out) = job(&is_finished) {
-                tx.send((i, out)).unwrap(); // shouldn't fail
+                // shouldn't fail
+                tx.send((i, out))
+                    .expect("Only one job can finish successfully");
             }
         });
     }
 
-    // Return on first exit, other threads are already terminated
-    rx.recv().unwrap()
+    // drop tx to prevent the receiver from hanging when all jobs fail.
+    drop(tx);
+
+    // return on first exit, other threads are already terminated
+    rx.recv().map_err(|_| NoSuccessfulJobError)
 }
 
 #[cfg(test)]
@@ -298,16 +316,16 @@ mod tests {
             }),
         ]);
         assert_eq!(
-            function_result,
+            function_result.unwrap(),
             (1, "2nd job"),
             "race function did not execute jobs correctly"
         );
 
         /* macro */
-        let macro_result: (_, i64) = race![
+        let macro_result = race![
             {
                 thread::sleep(Duration::from_millis(30));
-                1
+                1i64
             },
             {
                 thread::sleep(Duration::from_millis(10));
@@ -319,8 +337,8 @@ mod tests {
             }
         ];
         assert_eq!(
-            macro_result,
-            (1, 2),
+            macro_result.unwrap(),
+            (1, 2i64),
             "race macro did not execute jobs correctly"
         );
     }
@@ -352,7 +370,11 @@ mod tests {
             1,
             "race didn't exit after the fastest job"
         );
-        assert_eq!(result, (2, ()), "race did not execute jobs correctly");
+        assert_eq!(
+            result.unwrap(),
+            (2, ()),
+            "race did not execute jobs correctly"
+        );
 
         // wait for other jobs to finish
         thread::sleep(Duration::from_millis(200));
@@ -412,7 +434,11 @@ mod tests {
             3,
             "race did not execute jobs correctly"
         );
-        assert_eq!(result, (2, ()), "race did not execute jobs correctly");
+        assert_eq!(
+            result.unwrap(),
+            (2, ()),
+            "race did not execute jobs correctly"
+        );
 
         // wait for other jobs to finish
         thread::sleep(Duration::from_millis(200));
@@ -429,5 +455,25 @@ mod tests {
             3,
             "race didn't run jobs atomically"
         )
+    }
+
+    #[test]
+    fn race_fails_on_empty_jobs() {
+        let result: Result<(usize, ()), _> = race(vec![]);
+        assert_eq!(result, Err(NoSuccessfulJobError));
+    }
+
+    #[test]
+    fn race_fails_when_all_jobs_panic() {
+        #[allow(unreachable_code)]
+        let result = race![
+            {
+                panic!("1st job panicked");
+            },
+            {
+                panic!("2nd job panicked");
+            },
+        ];
+        assert_eq!(result, Err(NoSuccessfulJobError));
     }
 }

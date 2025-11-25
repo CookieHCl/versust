@@ -1,4 +1,4 @@
-use crate::Job;
+use crate::{Job, NoSuccessfulJobError};
 use std::sync::mpsc;
 use std::thread;
 
@@ -30,7 +30,7 @@ use std::thread;
 ///     }
 /// ];
 ///
-/// assert_eq!(result, (1, 2));
+/// assert_eq!(result.unwrap(), (1, 2));
 /// ```
 ///
 /// Using macro with preprocessing section:
@@ -59,7 +59,7 @@ use std::thread;
 ///     }
 /// ];
 ///
-/// assert_eq!(result, (1, "2nd job"));
+/// assert_eq!(result.unwrap(), (1, "2nd job"));
 /// assert_eq!(finished_count.load(Ordering::Acquire), 1);
 ///
 /// // 1st job is still running in the background
@@ -85,6 +85,13 @@ macro_rules! rush {
 ///
 /// Note that when the main thread of a Rust program terminates, the entire program shuts down, terminating all running threads.
 ///
+/// # Errors
+///
+/// Returns [`NoSuccessfulJobError`] if:
+///
+/// - No jobs are provided.
+/// - All jobs panicked.
+///
 /// # Examples
 ///
 /// ```
@@ -103,9 +110,9 @@ macro_rules! rush {
 ///     })
 /// ]);
 ///
-/// assert_eq!(result, (1, 2));
+/// assert_eq!(result.unwrap(), (1, 2));
 /// ```
-pub fn rush<I, T: Send + 'static>(jobs: I) -> (usize, T)
+pub fn rush<I, T: Send + 'static>(jobs: I) -> Result<(usize, T), NoSuccessfulJobError>
 where
     I: IntoIterator<Item = Job<T>>,
     T: Send + 'static,
@@ -120,8 +127,11 @@ where
         });
     }
 
-    // Return on first exit, other threads will be continued
-    rx.recv().unwrap()
+    // drop tx to prevent the receiver from hanging when all jobs fail.
+    drop(tx);
+
+    // return on first exit, other threads will be continued
+    rx.recv().map_err(|_| NoSuccessfulJobError)
 }
 
 #[cfg(test)]
@@ -148,16 +158,16 @@ mod tests {
             }),
         ]);
         assert_eq!(
-            function_result,
+            function_result.unwrap(),
             (1, "2nd job"),
             "rush function did not execute jobs correctly"
         );
 
         /* macro */
-        let macro_result: (_, i64) = rush![
+        let macro_result = rush![
             {
                 thread::sleep(Duration::from_millis(30));
-                1
+                1i64
             },
             {
                 thread::sleep(Duration::from_millis(10));
@@ -169,8 +179,8 @@ mod tests {
             }
         ];
         assert_eq!(
-            macro_result,
-            (1, 2),
+            macro_result.unwrap(),
+            (1, 2i64),
             "rush macro did not execute jobs correctly"
         );
     }
@@ -202,7 +212,11 @@ mod tests {
             1,
             "rush didn't exit after the fastest job"
         );
-        assert_eq!(result, (2, ()), "rush did not execute jobs correctly");
+        assert_eq!(
+            result.unwrap(),
+            (2, ()),
+            "rush did not execute jobs correctly"
+        );
 
         // wait for other jobs to finish
         thread::sleep(Duration::from_millis(200));
@@ -212,5 +226,24 @@ mod tests {
             3,
             "rush didn't run all remaining jobs"
         );
+    }
+
+    #[test]
+    fn rush_fails_on_empty_jobs() {
+        let result: Result<(usize, ()), _> = rush(vec![]);
+        assert_eq!(result, Err(NoSuccessfulJobError));
+    }
+
+    #[test]
+    fn rush_fails_when_all_jobs_panic() {
+        let result = rush![
+            {
+                panic!("1st job panicked");
+            },
+            {
+                panic!("2nd job panicked");
+            },
+        ];
+        assert_eq!(result, Err(NoSuccessfulJobError));
     }
 }

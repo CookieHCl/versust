@@ -148,10 +148,10 @@ mod tests {
         );
 
         /* macro */
-        let macro_results: Vec<JobResult<i64>> = sync![
+        let macro_results = sync![
             {
                 thread::sleep(Duration::from_millis(30));
-                1
+                1i64
             },
             {
                 thread::sleep(Duration::from_millis(10));

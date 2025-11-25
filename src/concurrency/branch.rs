@@ -149,10 +149,10 @@ mod tests {
         );
 
         /* macro */
-        let macro_handles: Vec<thread::JoinHandle<i64>> = branch![
+        let macro_handles = branch![
             {
                 thread::sleep(Duration::from_millis(30));
-                1
+                1i64
             },
             {
                 thread::sleep(Duration::from_millis(10));

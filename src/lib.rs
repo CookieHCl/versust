@@ -1,5 +1,22 @@
+use std::fmt;
 use std::sync::atomic::AtomicBool;
 use std::thread;
+
+/// An error returned from the [`race`](race()) function or the [`rush`](rush()) function.
+///
+/// This error indicates that no job completed successfully.
+/// Either no jobs were provided to the function or all jobs panicked/failed to send results.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct NoSuccessfulJobError;
+impl fmt::Display for NoSuccessfulJobError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "No job completed successfully; Either no jobs were provided or all jobs failed"
+        )
+    }
+}
+impl std::error::Error for NoSuccessfulJobError {}
 
 /// A closure that can be executed in a separate thread.
 ///
@@ -95,8 +112,8 @@ mod tests {
             }
         ];
 
-        let race_result = results[0].as_ref().unwrap();
-        let rush_result = results[1].as_ref().unwrap();
+        let race_result = results[0].as_ref().unwrap().as_ref().unwrap();
+        let rush_result = results[1].as_ref().unwrap().as_ref().unwrap();
 
         assert_eq!(
             *race_result,
