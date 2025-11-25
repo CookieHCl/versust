@@ -4,7 +4,7 @@ use std::thread;
 
 /// An error returned from the [`race`](race()) function or the [`rush`](rush()) function.
 ///
-/// This error indicates that no job completed successfully.
+/// This error indicates that no job completed successfully.  
 /// Either no jobs were provided to the function or all jobs panicked/failed to send results.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct NoSuccessfulJobError;
@@ -20,7 +20,7 @@ impl std::error::Error for NoSuccessfulJobError {}
 
 /// A closure that can be executed in a separate thread.
 ///
-/// Normally you would use the [`into_job`] function to create a [`Job<T>`].
+/// Normally you would use the [`into_job`] function to create a [`Job<T>`].  
 /// It is used by [`sync`](sync()), [`branch`](branch()), and [`rush`](rush()) functions.
 pub type Job<T> = Box<dyn FnOnce() -> T + Send + 'static>;
 

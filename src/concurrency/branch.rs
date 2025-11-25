@@ -5,7 +5,7 @@ use std::thread;
 ///
 /// This is a helper macro for [`branch`](branch()) function.
 ///
-/// The macro accepts closure's body, with an optional preprocessing section.  
+/// The macro accepts a list of closure bodies, each with an optional preprocessing section.  
 /// Preprocessing sections can be used to set up variables that will be moved into the closure.
 ///
 /// # Examples

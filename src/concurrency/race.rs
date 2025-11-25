@@ -8,16 +8,16 @@ use std::thread;
 ///
 /// This is a helper macro for [`race`](race()) function.
 ///
-/// The macro accepts the body of a closure taking no arguments, with an optional preprocessing section.  
+/// The macro accepts a list of closure bodies taking no arguments, each with an optional preprocessing section.  
 /// Preprocessing sections can be used to set up variables that will be moved into the closure.
 ///
-/// For each semicolon-separated statement in the body, the macro injects a code that checks [`AtomicBool`] flag to see if another job has already finished.
+/// For each semicolon-separated statement in the body, the macro injects a code that checks [`AtomicBool`] flag to see if another job has already finished.  
 /// Then, the macro sets the flag when the job finishes and returns its result.  
 /// Due to the parsing limitations of macros, a semicolon should be added after every statement, even after statements such as function declarations.
 ///
 /// Since a job may terminate after any semicolon, it must guarantee that it does proper cleanup at any point of termination.
 ///
-/// See [`RaceJob<T>`] for more details.
+/// See [`RaceJob<T>`] and [`race`](race()) for more details.
 ///
 /// If you need more fine-grained control, (e.g. checking inside for loop) you should use the [`race`](race()) function.
 ///
