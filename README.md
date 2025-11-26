@@ -1,7 +1,7 @@
 # versust
 
-A Rust crate for structured concurrency patterns.  
-This crate spawns threads for each job with various synchronization strategies.
+A Rust library for structured concurrency patterns.  
+This library spawns threads for each job with various synchronization strategies.
 
 Inspired from the [Verse Programming language](https://dev.epicgames.com/documentation/en-us/fortnite/time-flow-and-concurrency-in-verse).
 
@@ -170,3 +170,12 @@ let handles = branch![
 let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
 assert_eq!(results, vec![1, 2]);
 ```
+
+## License
+
+Licensed under either of:
+
+- Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE))
+- MIT license ([LICENSE-MIT](LICENSE-MIT))
+
+at your option.
