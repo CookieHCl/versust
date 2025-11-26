@@ -112,7 +112,7 @@ macro_rules! rush {
 ///
 /// assert_eq!(result.unwrap(), (1, 2));
 /// ```
-pub fn rush<I, T: Send + 'static>(jobs: I) -> Result<(usize, T), NoSuccessfulJobError>
+pub fn rush<I, T>(jobs: I) -> Result<(usize, T), NoSuccessfulJobError>
 where
     I: IntoIterator<Item = Job<T>>,
     T: Send + 'static,
